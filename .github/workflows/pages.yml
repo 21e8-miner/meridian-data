@@ -1,0 +1,94 @@
+# Publishes Meridian's broad data tier (tools/snapshot.py --part=broad) as a site of its own, so the
+# data set is not limited by one GitHub Pages site's size. The app at
+# https://21e8-miner.github.io/meridian/ reads it as a "shard".
+#
+# This file is kept in the meridian repository (data-site/pages.yml) and copied into the
+# meridian-data repository as .github/workflows/pages.yml. Edit it there, then copy it over.
+#
+# Like the main site, each run books the next one (GitHub's scheduler is unreliable); the schedule
+# only restarts the chain if it stops. Disable this workflow to stop publishing.
+name: Publish Meridian data
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "22,52 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+  pages: write
+  id-token: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    concurrency:
+      group: data-build
+      cancel-in-progress: false
+    steps:
+      - name: Get the Meridian code
+        uses: actions/checkout@v4
+        with:
+          repository: 21e8-miner/meridian
+          path: code
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Fetch the last build
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          run=$(gh api "repos/$GITHUB_REPOSITORY/actions/artifacts?name=github-pages&per_page=20" \
+            --jq "[.artifacts[] | select(.expired | not) | select(.workflow_run.id != $GITHUB_RUN_ID)] | sort_by(.created_at) | reverse | .[0].workflow_run.id // empty")
+          [ -n "$run" ] || { echo "no earlier build to start from"; exit 0; }
+          echo "starting from the build of run $run"
+          gh run download "$run" --repo "$GITHUB_REPOSITORY" --name github-pages --dir prev_artifact
+          mkdir -p prev && tar -xf prev_artifact/artifact.tar -C prev && rm -rf prev_artifact
+      - name: Build the broad tier
+        run: |
+          own="https://${GITHUB_REPOSITORY_OWNER}.github.io/${GITHUB_REPOSITORY#*/}/"
+          # the very first build starts from the main site, which held this tier before it moved here
+          if [ -f prev/data/state.json ]; then site="$own"; else site="https://${GITHUB_REPOSITORY_OWNER}.github.io/meridian/"; fi
+          python code/tools/snapshot.py _site --part=broad --prev=prev --site="$site"
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    concurrency:
+      group: data-deploy
+      cancel-in-progress: false
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
+
+  again:
+    needs: deploy
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      actions: write
+    steps:
+      - name: Wait, then start the next build
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          hour=$(TZ=America/New_York date +%-H); day=$(TZ=America/New_York date +%u)
+          if [ "$day" -le 5 ] && [ "$hour" -ge 4 ] && [ "$hour" -lt 20 ]; then wait=450; else wait=1680; fi
+          echo "next build in $wait s"; sleep "$wait"
+          others=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow pages.yml --limit 30 --json databaseId,status \
+            --jq "[.[] | select(.status != \"completed\" and .databaseId != $GITHUB_RUN_ID)] | length")
+          if [ "$others" != "0" ]; then echo "another run is already under way: leaving the next build to it"; exit 0; fi
+          gh workflow run pages.yml --repo "$GITHUB_REPOSITORY" --ref "$GITHUB_REF_NAME"
