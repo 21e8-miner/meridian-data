@@ -1,8 +1,9 @@
 # Meridian data
 
 Price history for [Meridian](https://github.com/21e8-miner/meridian)'s shared page,
-https://21e8-miner.github.io/meridian/. This site holds the broad tier: US stocks and ETFs beyond the
-S&P 500 and the main funds, and the members of world stock indexes, with five years of daily bars.
+https://21e8-miner.github.io/meridian/. This site holds the broad tier's daily history: US stocks and
+ETFs beyond the S&P 500 and the most traded funds, and the members of world stock indexes, with ten
+years of daily bars (their hourly bars are on the main site).
 The app reads it as a second data site ("shard"), so the data set is not limited by one GitHub
 Pages site's size.
 
