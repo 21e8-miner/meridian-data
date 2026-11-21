@@ -38,6 +38,13 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      # code that fails its tests is not published here either
+      - name: Test
+        working-directory: code
+        run: npm test
       - name: Fetch the last build
         continue-on-error: true
         env:
@@ -55,6 +62,9 @@ jobs:
           # the very first build starts from the main site, which held this tier before it moved here
           if [ -f prev/data/state.json ]; then site="$own"; else site="https://${GITHUB_REPOSITORY_OWNER}.github.io/meridian/"; fi
           python code/tools/snapshot.py _site --part=broad --prev=prev --site="$site"
+      # the Scanner's filters and presets for every symbol here, answered in advance (data/screen.json)
+      - name: Screen every symbol
+        run: node code/tools/screen.mjs _site --part=broad --prev=prev
       - uses: actions/upload-pages-artifact@v3
         with:
           path: _site
