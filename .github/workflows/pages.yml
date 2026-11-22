@@ -56,12 +56,11 @@ jobs:
           echo "starting from the build of run $run"
           gh run download "$run" --repo "$GITHUB_REPOSITORY" --name github-pages --dir prev_artifact
           mkdir -p prev && tar -xf prev_artifact/artifact.tar -C prev && rm -rf prev_artifact
+      # --site is the fallback when the last build's artifact could not be had (it expires after a
+      # day; the download can fail): this site as published. Never the main site: it does not hold
+      # these files, and a build started from it would publish a fraction of the tier.
       - name: Build the broad tier
-        run: |
-          own="https://${GITHUB_REPOSITORY_OWNER}.github.io/${GITHUB_REPOSITORY#*/}/"
-          # the very first build starts from the main site, which held this tier before it moved here
-          if [ -f prev/data/state.json ]; then site="$own"; else site="https://${GITHUB_REPOSITORY_OWNER}.github.io/meridian/"; fi
-          python code/tools/snapshot.py _site --part=broad --prev=prev --site="$site"
+        run: python code/tools/snapshot.py _site --part=broad --prev=prev --site="https://${GITHUB_REPOSITORY_OWNER}.github.io/${GITHUB_REPOSITORY#*/}/"
       # the Scanner's filters and presets for every symbol here, answered in advance (data/screen.json)
       - name: Screen every symbol
         run: node code/tools/screen.mjs _site --part=broad --prev=prev
